@@ -1,253 +1,232 @@
-# Class 4: Python for Spark (OOP)
+# Class 5: Spark ETL - Reading Data
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 5 of 15 | 1 hour | Read sensor CSV into Spark DataFrame |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+- [ ] Create a SparkSession
+- [ ] Read CSV files into DataFrames
+- [ ] Explore DataFrame structure and schema
 
 ## Prerequisites
-- Class 3: Python Basics
+- Classes 3-4: Python fundamentals
+- PySpark installed: `pip install pyspark`
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+Every data pipeline starts with reading data. Spark can read from CSV, JSON, Parquet, databases, and more. Understanding schemas is critical for data quality.
 
 ---
 
 # 📖 INSTRUCTOR-LED
 
-## 1. Classes and Objects
+## 1. Creating SparkSession
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
+from pyspark.sql import SparkSession
 
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
+# Create SparkSession (entry point to Spark)
+spark = SparkSession.builder \
+    .appName("SensorETL") \
+    .master("local[*]") \
+    .getOrCreate()
 
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
+# Verify
+print(f"Spark version: {spark.version}")
 ```
 
-### Key Concepts
+| Parameter | Meaning |
+|-----------|---------|
+| `appName` | Name shown in Spark UI |
+| `master` | `local[*]` = use all CPU cores |
+| `getOrCreate` | Reuse existing or create new |
 
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+### ✅ Checkpoint 1
+Run the code. Do you see the Spark version?
 
 ---
 
-## 2. Project Class: SensorReading
+## 2. Reading CSV Files
+
+### Basic Read
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
+# Read CSV with automatic schema detection
+df = spark.read.csv("sensors.csv", header=True, inferSchema=True)
 
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
+# View data
+df.show(5)
 
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
+# View schema
+df.printSchema()
 ```
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+**Sample Output:**
+```
++-------------------+-----------+--------+-----------+
+|          timestamp|temperature|humidity|  module_id|
++-------------------+-----------+--------+-----------+
+|2025-01-20 10:00:00|       25.3|    60.5|  sensor_01|
+|2025-01-20 10:01:00|       25.5|    59.8|  sensor_01|
++-------------------+-----------+--------+-----------+
+
+root
+ |-- timestamp: string (nullable = true)
+ |-- temperature: double (nullable = true)
+ |-- humidity: double (nullable = true)
+ |-- module_id: string (nullable = true)
+```
+
+### Read Options
+
+```python
+df = spark.read.csv(
+    "sensors.csv",
+    header=True,           # First row is header
+    inferSchema=True,      # Auto-detect types
+    sep=",",               # Delimiter
+    nullValue="NA"         # Treat "NA" as null
+)
+```
 
 ---
 
-## 3. Modules and Imports
+## 3. Explicit Schema (Recommended)
 
 ```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
+from pyspark.sql.types import StructType, StructField, StringType, FloatType, TimestampType
 
-# File: utils/sensor.py
-class SensorReading:
-    ...
+schema = StructType([
+    StructField("timestamp", TimestampType(), True),
+    StructField("temperature", FloatType(), True),
+    StructField("humidity", FloatType(), True),
+    StructField("module_id", StringType(), True)
+])
 
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
-
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
+df = spark.read.csv("sensors.csv", header=True, schema=schema)
+df.printSchema()
 ```
 
-### Project Structure
+### Why Explicit Schema?
 
-```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
+| inferSchema | Explicit Schema |
+|-------------|-----------------|
+| Reads data twice | Reads once |
+| May guess wrong | You control types |
+| Slower | Faster |
+
+---
+
+## 4. Exploring DataFrames
+
+```python
+# Row count
+print(f"Rows: {df.count()}")
+
+# Column names
+print(f"Columns: {df.columns}")
+
+# Summary statistics
+df.describe().show()
+
+# First N rows as list
+rows = df.take(3)
+print(rows)
 ```
 
 ---
 
 # ✏️ STUDENT PRACTICE
 
-## Exercise 1: Complete the Student Class
+## Exercise 1: Create Sample Data
+
+Since we may not have a CSV file, create data directly:
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+from pyspark.sql import SparkSession
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+spark = SparkSession.builder.appName("Practice").getOrCreate()
+
+# Create sample sensor data
+data = [
+    ("2025-01-20 10:00:00", 25.3, 60.5, "sensor_01"),
+    ("2025-01-20 10:01:00", 25.5, 59.8, "sensor_01"),
+    ("2025-01-20 10:00:00", 26.1, 58.2, "sensor_02"),
+    ("2025-01-20 10:01:00", None, 57.5, "sensor_02"),  # Missing temp!
+    ("2025-01-20 10:00:00", 150.0, 55.0, "sensor_03"), # Invalid!
+]
+columns = ["timestamp", "temperature", "humidity", "module_id"]
+
+df = spark.createDataFrame(data, columns)
+df.show()
+```
+
+---
+
+## Exercise 2: Explore the Data
+
+Using the DataFrame above:
+
+```python
+# YOUR TASKS:
+# 1. Print the schema
+# 2. Count total rows
+# 3. Count rows where temperature is NOT null
+# 4. Show only the module_id column
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
+# 1. Schema
+df.printSchema()
 
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
+# 2. Total rows
+print(f"Total: {df.count()}")
+
+# 3. Non-null temperature
+from pyspark.sql.functions import col
+print(f"Non-null temp: {df.filter(col('temperature').isNotNull()).count()}")
+
+# 4. Select column
+df.select("module_id").show()
 ```
 </details>
 
 ---
 
-## Exercise 2: Extend SensorReading
+## Exercise 3: Read with Schema
 
-Add a method to categorize temperature:
+Define an explicit schema and create the DataFrame:
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
+from pyspark.sql.types import StructType, StructField, StringType, FloatType
 
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
+# YOUR TASK: Define schema for:
+# - timestamp (String)
+# - temperature (Float)
+# - humidity (Float)  
+# - module_id (String)
+
+schema = StructType([
+    # YOUR CODE HERE
+])
+
+df = spark.createDataFrame(data, schema)
+df.printSchema()
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
-```
-</details>
-
----
-
-## Exercise 3: Create a Module
-
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
-
-2. Create `main.py` that imports and uses them
-
-<details>
-<summary>💡 Solution</summary>
-
-```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
+schema = StructType([
+    StructField("timestamp", StringType(), True),
+    StructField("temperature", FloatType(), True),
+    StructField("humidity", FloatType(), True),
+    StructField("module_id", StringType(), True)
+])
 ```
 </details>
 
@@ -255,47 +234,47 @@ print(validate_reading(r))  # True
 
 # 📝 QUICK CHECK
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+1. What method reads a CSV file in Spark?
+   - a) `spark.load.csv()`
+   - b) `spark.read.csv()`
+   - c) `spark.open.csv()`
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+2. What does `inferSchema=True` do?
+   - a) Creates a new schema
+   - b) Auto-detects column types
+   - c) Validates the schema
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+3. Which is faster for large files?
+   - a) inferSchema
+   - b) Explicit schema
+   - c) Same speed
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+1. b) `spark.read.csv()`
+2. b) Auto-detects column types
+3. b) Explicit schema
 </details>
 
 ---
 
 # 📋 SUMMARY
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Operation | Code |
+|-----------|------|
+| Create session | `SparkSession.builder.getOrCreate()` |
+| Read CSV | `spark.read.csv("file.csv", header=True)` |
+| Show data | `df.show()` |
+| Show schema | `df.printSchema()` |
+| Count rows | `df.count()` |
 
 ---
 
 # ⏭️ NEXT CLASS
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+**Class 6: Spark ETL - Transform & Write**
+- Filter rows
+- Add/modify columns
+- Write to Parquet
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+**Preparation:** Keep your SparkSession code ready
