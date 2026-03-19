@@ -1,301 +1,286 @@
-# Class 4: Python for Spark (OOP)
+# Class 6: Spark ETL - Transform & Write
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 6 of 15 | 1 hour | Clean sensor data and write to Parquet |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+- [ ] Filter rows based on conditions
+- [ ] Add and modify columns
+- [ ] Write DataFrames to Parquet format
 
 ## Prerequisites
-- Class 3: Python Basics
+- Class 5: Reading data into Spark
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Recall from Class 5
+You read sensor data into a DataFrame. Now we'll clean it (remove invalid readings) and save it.
 
 ---
 
 # 📖 INSTRUCTOR-LED
 
-## 1. Classes and Objects
+## 1. Setup: Create Sample Data
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when, lit
 
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
+spark = SparkSession.builder.appName("Transform").getOrCreate()
 
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
+data = [
+    ("2025-01-20", 25.3, 60.5, "sensor_01"),
+    ("2025-01-20", 26.1, 58.2, "sensor_02"),
+    ("2025-01-20", None, 55.0, "sensor_03"),   # Missing!
+    ("2025-01-20", 150.0, 50.0, "sensor_04"),  # Invalid!
+    ("2025-01-21", 24.8, 62.1, "sensor_01"),
+]
+df = spark.createDataFrame(data, ["date", "temperature", "humidity", "module_id"])
+df.show()
 ```
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
 
 ---
 
-## 2. Project Class: SensorReading
+## 2. Filtering Rows
+
+### Single Condition
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
-
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
-
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
+# Keep only valid temperatures
+df_valid = df.filter(col("temperature") <= 100)
+df_valid.show()
 ```
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+### Multiple Conditions
+
+```python
+# Valid temperature AND not null
+df_clean = df.filter(
+    (col("temperature").isNotNull()) &
+    (col("temperature") <= 100)
+)
+df_clean.show()
+```
+
+### SQL-Style Filter
+
+```python
+df_clean = df.filter("temperature IS NOT NULL AND temperature <= 100")
+```
+
+### ✅ Checkpoint 1
+How many rows remain after filtering? (Answer: 3)
 
 ---
 
-## 3. Modules and Imports
+## 3. Adding/Modifying Columns
+
+### Add Constant Column
 
 ```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
-
-# File: utils/sensor.py
-class SensorReading:
-    ...
-
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
-
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
+df = df.withColumn("unit", lit("celsius"))
 ```
 
-### Project Structure
+### Calculate New Column
 
+```python
+df = df.withColumn("temp_fahrenheit", col("temperature") * 9/5 + 32)
 ```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
+
+### Conditional Column
+
+```python
+df = df.withColumn("status",
+    when(col("temperature") > 30, "HOT")
+    .when(col("temperature") < 15, "COLD")
+    .otherwise("NORMAL")
+)
+df.show()
 ```
+
+**Output:**
+```
++----------+-----------+--------+-----------+-------+---------------+------+
+|      date|temperature|humidity|  module_id|   unit|temp_fahrenheit|status|
++----------+-----------+--------+-----------+-------+---------------+------+
+|2025-01-20|       25.3|    60.5|  sensor_01|celsius|          77.54|NORMAL|
+|2025-01-20|       26.1|    58.2|  sensor_02|celsius|          78.98|NORMAL|
+...
+```
+
+---
+
+## 4. Writing to Parquet
+
+```python
+# Basic write
+df_clean.write.parquet("output/sensors")
+
+# Overwrite existing
+df_clean.write.mode("overwrite").parquet("output/sensors")
+
+# Partition by column
+df_clean.write.mode("overwrite") \
+    .partitionBy("module_id") \
+    .parquet("output/sensors_partitioned")
+```
+
+### Why Parquet?
+
+| Feature | CSV | Parquet |
+|---------|-----|---------|
+| Compression | ❌ | ✅ High |
+| Schema | ❌ | ✅ Embedded |
+| Read speed | Slow | Fast |
+| Column pruning | ❌ | ✅ |
 
 ---
 
 # ✏️ STUDENT PRACTICE
 
-## Exercise 1: Complete the Student Class
+## Exercise 1: Clean Sensor Data
+
+Starting with the sample data:
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+data = [
+    ("2025-01-20", 25.3, 60.5, "sensor_01"),
+    ("2025-01-20", 26.1, 58.2, "sensor_02"),
+    ("2025-01-20", None, 55.0, "sensor_03"),
+    ("2025-01-20", 150.0, 50.0, "sensor_04"),
+    ("2025-01-20", -100.0, 45.0, "sensor_05"),
+    ("2025-01-21", 24.8, 62.1, "sensor_01"),
+]
+df = spark.createDataFrame(data, ["date", "temperature", "humidity", "module_id"])
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+# YOUR TASKS:
+# 1. Filter: temperature is NOT NULL
+# 2. Filter: temperature between -50 and 100
+# 3. Filter: humidity between 0 and 100
+# 4. Show result and count rows
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
-
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
+df_clean = df.filter(
+    (col("temperature").isNotNull()) &
+    (col("temperature") >= -50) &
+    (col("temperature") <= 100) &
+    (col("humidity") >= 0) &
+    (col("humidity") <= 100)
+)
+df_clean.show()
+print(f"Clean rows: {df_clean.count()}")  # 3
 ```
 </details>
 
 ---
 
-## Exercise 2: Extend SensorReading
+## Exercise 2: Add Status Column
 
-Add a method to categorize temperature:
+Add a `temp_status` column:
+- "COLD" if temperature < 20
+- "WARM" if 20 <= temperature <= 30
+- "HOT" if temperature > 30
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
+# YOUR CODE HERE
+df_with_status = df_clean  # Add the column
 
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
+df_with_status.select("module_id", "temperature", "temp_status").show()
+```
+
+**Expected:**
+```
++-----------+-----------+-----------+
+|  module_id|temperature|temp_status|
++-----------+-----------+-----------+
+|  sensor_01|       25.3|       WARM|
+|  sensor_02|       26.1|       WARM|
+|  sensor_01|       24.8|       WARM|
++-----------+-----------+-----------+
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
+df_with_status = df_clean.withColumn("temp_status",
+    when(col("temperature") < 20, "COLD")
+    .when(col("temperature") <= 30, "WARM")
+    .otherwise("HOT")
+)
 ```
 </details>
 
 ---
 
-## Exercise 3: Create a Module
+## Exercise 3: Complete ETL Pipeline
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
-
-2. Create `main.py` that imports and uses them
-
-<details>
-<summary>💡 Solution</summary>
+Combine everything into one pipeline:
 
 ```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
+# Complete ETL: Read → Clean → Transform → Write
+df_final = df \
+    .filter(col("temperature").isNotNull()) \
+    .filter((col("temperature") >= -50) & (col("temperature") <= 100)) \
+    .withColumn("temp_status",
+        when(col("temperature") < 20, "COLD")
+        .when(col("temperature") <= 30, "WARM")
+        .otherwise("HOT")
+    )
 
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
+# Write to parquet
+df_final.write.mode("overwrite").parquet("output/sensors_clean")
+print("ETL Complete!")
 ```
-</details>
 
 ---
 
 # 📝 QUICK CHECK
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+1. Which method adds a new column?
+   - a) `addColumn()`
+   - b) `withColumn()`
+   - c) `newColumn()`
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+2. What does `mode("overwrite")` do?
+   - a) Appends data
+   - b) Replaces existing data
+   - c) Fails if exists
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+3. Which format is best for Spark output?
+   - a) CSV
+   - b) JSON
+   - c) Parquet
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+1. b) `withColumn()`
+2. b) Replaces existing data
+3. c) Parquet
 </details>
 
 ---
 
 # 📋 SUMMARY
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Operation | Code |
+|-----------|------|
+| Filter | `df.filter(col("x") > 10)` |
+| Add column | `df.withColumn("new", lit("value"))` |
+| Conditional | `when(cond, val).otherwise(val)` |
+| Write | `df.write.parquet("path")` |
+| Overwrite | `df.write.mode("overwrite")` |
 
 ---
 
 # ⏭️ NEXT CLASS
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+**Class 7: Test-Driven Development**
+- Write tests BEFORE code
+- Test DataFrames with chispa
+- TDD workflow: Red → Green → Refactor
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+**Preparation:** Install test libraries: `pip install pytest chispa`
