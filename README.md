@@ -1,301 +1,398 @@
-# Class 4: Python for Spark (OOP)
+# Class 7: Test-Driven Development
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 7 of 15 | 1 hour | Add tests for sensor data transformations |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+By the end of this lesson, you will be able to:
+- [ ] Explain the TDD workflow: Red → Green → Refactor
+- [ ] Write unit tests using Python's `unittest`
+- [ ] Test PySpark DataFrames using `chispa`
 
 ## Prerequisites
-- Class 3: Python Basics
+- Lesson 04: Spark ETL Basics
+- Install: `pip install pytest chispa`
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+Data pipelines fail silently. A bug might produce wrong numbers that go unnoticed for weeks. Tests catch these bugs early and give you confidence to refactor code without breaking things.
 
----
-
-# 📖 INSTRUCTOR-LED
-
-## 1. Classes and Objects
-
-```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
-
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
-
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
-```
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+## Recall from Lesson 4
+You wrote transformations like filtering invalid temperatures and adding status columns. How do you know they work correctly? Tests!
 
 ---
 
-## 2. Project Class: SensorReading
+# 📖 INSTRUCTOR-LED SECTION
 
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
+## 1. What is Test-Driven Development?
 
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
+> **TDD** is writing tests BEFORE writing code. The cycle is:
+> 1. 🔴 **Red**: Write a failing test
+> 2. 🟢 **Green**: Write minimal code to pass
+> 3. 🔄 **Refactor**: Clean up while keeping tests green
 
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
-```
+[https://en.wikipedia.org/wiki/Test-driven_development](https://en.wikipedia.org/wiki/Test-driven_development)
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+### Why TDD for Data Engineering?
+
+| Without TDD | With TDD |
+|-------------|----------|
+| "I think it works" | "Tests prove it works" |
+| Bugs found in production | Bugs found immediately |
+| Fear of changing code | Confidence to refactor |
 
 ---
 
-## 3. Modules and Imports
+## 2. Defining a Unit Test
+
+A unit test needs:
+1. **Input**: What data goes in?
+2. **Expected Output**: What should come out?
+3. **Assertion**: Does actual match expected?
+
+### Example: Grade Assignment
+
+**Input:**
+
+| student_id | name | score |
+|------------|------|-------|
+| 1 | John | 90 |
+| 2 | Jane | 72 |
+
+**Expected Output:**
+
+| student_id | name | score | grade |
+|------------|------|-------|-------|
+| 1 | John | 90 | A |
+| 2 | Jane | 72 | B |
+
+---
+
+## 3. Python's unittest Module
 
 ```python
-# File: utils/grading.py
+import unittest
+
 def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
-
-# File: utils/sensor.py
-class SensorReading:
-    ...
-
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
-
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
-```
-
-### Project Structure
-
-```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
-```
-
----
-
-# ✏️ STUDENT PRACTICE
-
-## Exercise 1: Complete the Student Class
-
-```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
-
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
-```
-
-<details>
-<summary>💡 Solution</summary>
-
-```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
-
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
-```
-</details>
-
----
-
-## Exercise 2: Extend SensorReading
-
-Add a method to categorize temperature:
-
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
-
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
-```
-
-<details>
-<summary>💡 Solution</summary>
-
-```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
+    if score >= 80:
+        return "A"
+    elif score >= 70:
+        return "B"
     else:
-        return "HOT"
+        return "F"
+
+class TestScoreToGrade(unittest.TestCase):
+    
+    def test_grade_a(self):
+        self.assertEqual(score_to_grade(90), "A")
+        self.assertEqual(score_to_grade(80), "A")
+    
+    def test_grade_b(self):
+        self.assertEqual(score_to_grade(79), "B")
+        self.assertEqual(score_to_grade(70), "B")
+    
+    def test_grade_f(self):
+        self.assertEqual(score_to_grade(50), "F")
+
+if __name__ == "__main__":
+    unittest.main()
 ```
-</details>
+
+**Run it:**
+```bash
+python test_grades.py
+```
+
+**Expected Output:**
+```
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+```
+
+### ✅ Checkpoint 1
+Run the test above. Do all 3 tests pass?
 
 ---
 
-## Exercise 3: Create a Module
+## 4. Testing PySpark with Chispa
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
+DataFrame comparison is complex. `chispa` makes it easy:
 
-2. Create `main.py` that imports and uses them
+```bash
+pip install chispa
+```
+
+```python
+import unittest
+from pyspark.sql import SparkSession
+from chispa.dataframe_comparer import assert_df_equality
+
+class TestSensorETL(unittest.TestCase):
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create SparkSession once for all tests"""
+        cls.spark = SparkSession.builder \
+            .master("local[*]") \
+            .appName("Testing") \
+            .getOrCreate()
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Stop SparkSession after all tests"""
+        cls.spark.stop()
+    
+    def test_filter_invalid_temperature(self):
+        # ARRANGE: Create input data
+        input_data = [
+            ("sensor_01", 25.0),
+            ("sensor_02", 3000.0),  # Invalid!
+            ("sensor_03", 30.0),
+        ]
+        input_df = self.spark.createDataFrame(input_data, ["module_id", "temperature"])
+        
+        # ARRANGE: Define expected output
+        expected_data = [
+            ("sensor_01", 25.0),
+            ("sensor_03", 30.0),
+        ]
+        expected_df = self.spark.createDataFrame(expected_data, ["module_id", "temperature"])
+        
+        # ACT: Run the transformation
+        from pyspark.sql.functions import col
+        result_df = input_df.filter(col("temperature") < 100)
+        
+        # ASSERT: Compare DataFrames
+        assert_df_equality(result_df, expected_df, ignore_row_order=True)
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+---
+
+## 5. TDD Workflow Demo
+
+Let's build a function using TDD:
+
+### Step 1: 🔴 Write Failing Test
+
+```python
+def test_add_status_column(self):
+    input_data = [("s1", 35.0), ("s2", 25.0), ("s3", 5.0)]
+    input_df = self.spark.createDataFrame(input_data, ["id", "temp"])
+    
+    expected_data = [("s1", 35.0, "HOT"), ("s2", 25.0, "NORMAL"), ("s3", 5.0, "COLD")]
+    expected_df = self.spark.createDataFrame(expected_data, ["id", "temp", "status"])
+    
+    result_df = add_status(input_df)  # Function doesn't exist yet!
+    
+    assert_df_equality(result_df, expected_df)
+```
+
+**Run:** Test fails with `NameError: name 'add_status' is not defined`
+
+### Step 2: 🟢 Write Minimal Code to Pass
+
+```python
+from pyspark.sql.functions import col, when
+
+def add_status(df):
+    return df.withColumn("status",
+        when(col("temp") > 30, "HOT")
+        .when(col("temp") < 10, "COLD")
+        .otherwise("NORMAL")
+    )
+```
+
+**Run:** Test passes! ✅
+
+### Step 3: 🔄 Refactor (if needed)
+
+Code is clean, no refactoring needed.
+
+---
+
+# ✏️ STUDENT PRACTICE SECTION
+
+## Exercise 1: Test the Grade Function
+
+Add tests for edge cases:
+
+```python
+class TestScoreToGrade(unittest.TestCase):
+    
+    def test_boundary_80(self):
+        """Score of exactly 80 should be A"""
+        # YOUR CODE HERE
+        pass
+    
+    def test_boundary_70(self):
+        """Score of exactly 70 should be B"""
+        # YOUR CODE HERE
+        pass
+    
+    def test_zero(self):
+        """Score of 0 should be F"""
+        # YOUR CODE HERE
+        pass
+```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
+def test_boundary_80(self):
+    self.assertEqual(score_to_grade(80), "A")
 
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
+def test_boundary_70(self):
+    self.assertEqual(score_to_grade(70), "B")
 
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
+def test_zero(self):
+    self.assertEqual(score_to_grade(0), "F")
 ```
 </details>
 
 ---
 
-# 📝 QUICK CHECK
+## Exercise 2: Test Sensor Validation
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+Write a test for a function that validates sensor readings:
+- Temperature must be between -50 and 100
+- Humidity must be between 0 and 100
+- Invalid rows should be removed
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+```python
+def test_validate_sensor_readings(self):
+    input_data = [
+        ("s1", 25.0, 60.0),   # Valid
+        ("s2", 150.0, 50.0),  # Invalid temp
+        ("s3", 20.0, 120.0),  # Invalid humidity
+        ("s4", 30.0, 70.0),   # Valid
+    ]
+    input_df = self.spark.createDataFrame(input_data, ["id", "temp", "humidity"])
+    
+    expected_data = [
+        ("s1", 25.0, 60.0),
+        ("s4", 30.0, 70.0),
+    ]
+    expected_df = self.spark.createDataFrame(expected_data, ["id", "temp", "humidity"])
+    
+    # YOUR CODE: Implement validate_readings() function
+    result_df = validate_readings(input_df)
+    
+    assert_df_equality(result_df, expected_df, ignore_row_order=True)
+```
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+<details>
+<summary>💡 Solution</summary>
+
+```python
+from pyspark.sql.functions import col
+
+def validate_readings(df):
+    return df.filter(
+        (col("temp") >= -50) & (col("temp") <= 100) &
+        (col("humidity") >= 0) & (col("humidity") <= 100)
+    )
+```
+</details>
+
+---
+
+## Exercise 3: TDD Challenge
+
+Using TDD, create a function `categorize_air_quality` that:
+- Takes a DataFrame with `gas_concentration` column
+- Adds `air_quality` column:
+  - "GOOD" if gas_concentration < 0.03
+  - "MODERATE" if 0.03 <= gas_concentration < 0.06
+  - "POOR" if gas_concentration >= 0.06
+
+**Step 1:** Write the test first (it will fail)
+**Step 2:** Implement the function
+**Step 3:** Run test until it passes
+
+<details>
+<summary>💡 Solution</summary>
+
+```python
+# Test
+def test_categorize_air_quality(self):
+    input_data = [(0.01,), (0.04,), (0.08,)]
+    input_df = self.spark.createDataFrame(input_data, ["gas_concentration"])
+    
+    expected_data = [(0.01, "GOOD"), (0.04, "MODERATE"), (0.08, "POOR")]
+    expected_df = self.spark.createDataFrame(expected_data, ["gas_concentration", "air_quality"])
+    
+    result_df = categorize_air_quality(input_df)
+    assert_df_equality(result_df, expected_df)
+
+# Implementation
+def categorize_air_quality(df):
+    return df.withColumn("air_quality",
+        when(col("gas_concentration") < 0.03, "GOOD")
+        .when(col("gas_concentration") < 0.06, "MODERATE")
+        .otherwise("POOR")
+    )
+```
+</details>
+
+---
+
+## Quick Check
+
+1. In TDD, what comes first?
+   - a) Write code, then test
+   - b) Write test, then code
+   - c) Write documentation
+
+2. What does `assert_df_equality` do?
+   - a) Checks if DataFrames have same schema
+   - b) Checks if DataFrames have same data
+   - c) Both schema and data
+
+3. What color represents a failing test in TDD?
+   - a) Green
+   - b) Red
+   - c) Yellow
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+
+1. b) Write test, then code
+2. c) Both schema and data
+3. b) Red
 </details>
 
 ---
 
-# 📋 SUMMARY
+## Common Errors
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `DataFramesNotEqualError` | Row order differs | Add `ignore_row_order=True` |
+| `SchemasNotEqualError` | Column types differ | Check schema with `printSchema()` |
+| `AssertionError` | Expected != Actual | Print both to debug |
 
 ---
 
-# ⏭️ NEXT CLASS
+## Summary
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+| Concept | Key Point |
+|---------|-----------|
+| TDD Cycle | Red → Green → Refactor |
+| Unit Test | Input + Expected Output + Assertion |
+| chispa | `assert_df_equality(actual, expected)` |
+| Best Practice | Test edge cases and boundaries |
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+---
+
+## What's Next?
+
+In **Lesson 6**, we'll learn about Data Lifecycle - how data flows from source systems through raw, staged, and analytics layers. You'll design the architecture for our sensor data pipeline.
+
+**Preparation:** Think about where sensor data comes from and where it needs to go.
