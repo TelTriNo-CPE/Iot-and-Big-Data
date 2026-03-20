@@ -1,301 +1,396 @@
-# Class 4: Python for Spark (OOP)
+# Class 11: Orchestration with Apache Airflow
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 11 of 15 | 1 hour | Understand DAGs and Airflow concepts |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+By the end of this lesson, you will be able to:
+- [ ] Explain workflow orchestration concepts
+- [ ] Create DAGs in Apache Airflow
+- [ ] Configure task dependencies and scheduling
 
 ## Prerequisites
-- Class 3: Python Basics
+- Lessons 03-08 completed
+- Docker installed
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+ETL jobs need to run on schedule. Job B depends on Job A. Failures need alerts. Orchestration tools like Airflow manage all this complexity so you don't have to write cron jobs and bash scripts.
+
+## Recall from Lesson 6
+You designed a pipeline: Raw → Staged → Analytics. Now we'll automate it to run daily with proper dependencies.
 
 ---
 
-# 📖 INSTRUCTOR-LED
+# 📖 INSTRUCTOR-LED SECTION
 
-## 1. Classes and Objects
+## 1. What is Orchestration?
+
+Orchestration answers:
+- **When** should jobs run? (Schedule)
+- **What order** should they run? (Dependencies)
+- **What if** something fails? (Retry, alerts)
+
+### Without Orchestration
+
+```bash
+# Fragile cron-based approach
+0 1 * * * python raw_to_staged.py
+0 2 * * * python staged_to_analytics.py  # Hope job 1 finished!
+```
+
+### With Orchestration
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
-
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
-
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
+raw_to_staged >> staged_to_analytics  # Explicit dependency
 ```
+
+---
+
+## 2. Apache Airflow Overview
+
+| Feature | Description |
+|---------|-------------|
+| Open source | Free, large community |
+| Python-based | DAGs defined in Python |
+| Web UI | Monitor and manage workflows |
+| Extensible | 1000+ integrations |
 
 ### Key Concepts
 
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+| Term | Definition |
+|------|------------|
+| **DAG** | Directed Acyclic Graph - the workflow |
+| **Task** | A single unit of work |
+| **Operator** | Template for a task (Python, Bash, etc.) |
+| **Dependency** | Task B runs after Task A |
 
 ---
 
-## 2. Project Class: SensorReading
+## 3. DAGs as Graphs
 
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
-
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
-
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Extract   │ ──▶ │  Transform  │ ──▶ │    Load     │
+└─────────────┘     └─────────────┘     └─────────────┘
+      │                                        │
+      │            ┌─────────────┐             │
+      └──────────▶ │   Notify    │ ◀───────────┘
+                   └─────────────┘
 ```
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+- **Directed**: Arrows show flow direction
+- **Acyclic**: No loops (can't go back)
+
+![image-20250210-173704.png](09-orchestration-images/image-20250210-173704.png)
 
 ---
 
-## 3. Modules and Imports
+## 4. Your First DAG
 
 ```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.python import PythonOperator
 
-# File: utils/sensor.py
-class SensorReading:
-    ...
+# Define functions
+def extract():
+    print("Extracting data...")
+    return "extracted_data"
 
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
+def transform():
+    print("Transforming data...")
+    return "transformed_data"
 
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
+def load():
+    print("Loading data...")
+    return "done"
+
+# Define DAG
+with DAG(
+    dag_id="my_first_dag",
+    start_date=datetime(2025, 1, 1),
+    schedule_interval="@daily",  # Run daily
+    catchup=False                # Don't backfill
+) as dag:
+    
+    task_extract = PythonOperator(
+        task_id="extract",
+        python_callable=extract
+    )
+    
+    task_transform = PythonOperator(
+        task_id="transform",
+        python_callable=transform
+    )
+    
+    task_load = PythonOperator(
+        task_id="load",
+        python_callable=load
+    )
+    
+    # Define dependencies
+    task_extract >> task_transform >> task_load
 ```
 
-### Project Structure
+### Schedule Intervals
 
-```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
-```
+| Preset | Cron Equivalent | Meaning |
+|--------|-----------------|---------|
+| `@daily` | `0 0 * * *` | Midnight daily |
+| `@hourly` | `0 * * * *` | Every hour |
+| `@weekly` | `0 0 * * 0` | Sunday midnight |
+| `None` | - | Manual trigger only |
+
+### ✅ Checkpoint 1
+Identify in the code above:
+- DAG definition
+- Task definitions
+- Dependencies
 
 ---
 
-# ✏️ STUDENT PRACTICE
+## 5. Running PySpark in Airflow
 
-## Exercise 1: Complete the Student Class
+Use `PythonVirtualenvOperator` to isolate PySpark:
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+from airflow.operators.python import PythonVirtualenvOperator
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+def run_spark_job():
+    from pyspark.sql import SparkSession
+    
+    spark = SparkSession.builder.appName("AirflowJob").getOrCreate()
+    
+    df = spark.read.parquet("/data/raw/")
+    df_clean = df.filter(df.temperature.isNotNull())
+    df_clean.write.mode("overwrite").parquet("/data/staged/")
+    
+    spark.stop()
+
+task_spark = PythonVirtualenvOperator(
+    task_id="run_spark",
+    python_callable=run_spark_job,
+    requirements=["pyspark==3.5.0"],
+    system_site_packages=False
+)
+```
+
+**Why virtualenv?** Isolates PySpark dependencies from Airflow's Python environment.
+
+---
+
+## 6. Airflow Web UI
+
+### DAGs List
+![image-20250210-182059.png](09-orchestration-images/image-20250210-182059.png)
+
+### DAG Graph View
+![image-20250210-182029.png](09-orchestration-images/image-20250210-182029.png)
+
+### Key UI Features
+
+| Feature | Location | Purpose |
+|---------|----------|---------|
+| Toggle DAG | DAGs list | Enable/disable |
+| Trigger | DAG page | Manual run |
+| Graph | DAG page | Visualize dependencies |
+| Logs | Task instance | Debug failures |
+
+![image-20250210-185059.png](09-orchestration-images/image-20250210-185059.png)
+
+---
+
+## 7. When to Use Airflow
+
+### ✅ Use Airflow When:
+- Complex dependencies between jobs
+- Need scheduling and monitoring
+- Multiple data sources/destinations
+- Team needs visibility into pipelines
+
+### ❌ Don't Use Airflow When:
+- Simple cron job is enough
+- Real-time streaming (use Kafka)
+- Dynamic pipelines that change every run
+- Team doesn't know Python
+
+---
+
+# ✏️ STUDENT PRACTICE SECTION
+
+## Exercise 1: Create a Simple DAG
+
+Create a DAG with 3 tasks that print messages:
+
+```python
+# File: dags/hello_dag.py
+
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+def say_hello():
+    print("Hello!")
+
+def say_world():
+    print("World!")
+
+def say_done():
+    print("Done!")
+
+# YOUR CODE: Create DAG with these tasks
+# Dependencies: hello >> world >> done
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
-
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
-```
-</details>
-
----
-
-## Exercise 2: Extend SensorReading
-
-Add a method to categorize temperature:
-
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
+with DAG(
+    dag_id="hello_world",
+    start_date=datetime(2025, 1, 1),
+    schedule_interval=None,
+    catchup=False
+) as dag:
     
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
+    t1 = PythonOperator(task_id="hello", python_callable=say_hello)
+    t2 = PythonOperator(task_id="world", python_callable=say_world)
+    t3 = PythonOperator(task_id="done", python_callable=say_done)
+    
+    t1 >> t2 >> t3
+```
+</details>
 
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
+---
+
+## Exercise 2: Sensor ETL DAG
+
+Create a DAG for our sensor data pipeline:
+
+```python
+# Tasks:
+# 1. raw_to_staged: Read CSV, clean, write Parquet
+# 2. staged_to_analytics: Aggregate daily stats
+# 3. notify: Print completion message
+
+# Dependencies: raw_to_staged >> staged_to_analytics >> notify
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
+from datetime import datetime
+from airflow import DAG
+from airflow.operators.python import PythonVirtualenvOperator, PythonOperator
+
+def raw_to_staged():
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col
+    
+    spark = SparkSession.builder.appName("RawToStaged").getOrCreate()
+    df = spark.read.csv("/data/raw/sensors.csv", header=True, inferSchema=True)
+    df_clean = df.filter(col("temperature").isNotNull())
+    df_clean.write.mode("overwrite").parquet("/data/staged/sensors")
+    spark.stop()
+
+def staged_to_analytics():
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import avg, to_date, col
+    
+    spark = SparkSession.builder.appName("StagedToAnalytics").getOrCreate()
+    df = spark.read.parquet("/data/staged/sensors")
+    df_agg = df.withColumn("date", to_date(col("timestamp"))) \
+        .groupBy("module_id", "date") \
+        .agg(avg("temperature").alias("avg_temp"))
+    df_agg.write.mode("overwrite").parquet("/data/analytics/daily")
+    spark.stop()
+
+def notify():
+    print("Sensor ETL pipeline complete!")
+
+with DAG(
+    dag_id="sensor_etl",
+    start_date=datetime(2025, 1, 1),
+    schedule_interval="@daily",
+    catchup=False
+) as dag:
+    
+    t1 = PythonVirtualenvOperator(
+        task_id="raw_to_staged",
+        python_callable=raw_to_staged,
+        requirements=["pyspark==3.5.0"]
+    )
+    
+    t2 = PythonVirtualenvOperator(
+        task_id="staged_to_analytics",
+        python_callable=staged_to_analytics,
+        requirements=["pyspark==3.5.0"]
+    )
+    
+    t3 = PythonOperator(
+        task_id="notify",
+        python_callable=notify
+    )
+    
+    t1 >> t2 >> t3
 ```
 </details>
 
 ---
 
-## Exercise 3: Create a Module
+## Quick Check
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
+1. What does DAG stand for?
+   - a) Data Analysis Graph
+   - b) Directed Acyclic Graph
+   - c) Dynamic Airflow Graph
 
-2. Create `main.py` that imports and uses them
+2. What operator runs a Python function?
+   - a) BashOperator
+   - b) PythonOperator
+   - c) SparkOperator
 
-<details>
-<summary>💡 Solution</summary>
-
-```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
-```
-</details>
-
----
-
-# 📝 QUICK CHECK
-
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
-
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
-
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+3. What does `>>` mean in Airflow?
+   - a) Greater than
+   - b) Dependency (run after)
+   - c) Parallel execution
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+
+1. b) Directed Acyclic Graph
+2. b) PythonOperator
+3. b) Dependency (run after)
 </details>
 
 ---
 
-# 📋 SUMMARY
+## Common Errors
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| DAG not appearing | Syntax error in file | Check Airflow logs |
+| Import error | Module not installed | Add to `requirements` |
+| Task stuck | Dependency not met | Check upstream tasks |
 
 ---
 
-# ⏭️ NEXT CLASS
+## Summary
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+| Concept | Key Point |
+|---------|-----------|
+| DAG | Workflow as a directed graph |
+| Task | Single unit of work |
+| Operator | Template for tasks |
+| `>>` | Defines dependency |
+| Schedule | When DAG runs |
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+---
+
+## What's Next?
+
+In **Lesson 10**, we'll do hands-on Airflow practice. You'll deploy a complete ETL pipeline and learn to debug common issues.
+
+**Preparation:** Make sure Docker is running.
