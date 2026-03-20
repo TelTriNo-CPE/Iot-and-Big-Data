@@ -1,301 +1,390 @@
-# Class 4: Python for Spark (OOP)
+# Class 9: Joining Data
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 9 of 15 | 1 hour | Join sensor readings with location metadata |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+By the end of this lesson, you will be able to:
+- [ ] Explain different types of SQL joins
+- [ ] Apply joins in PySpark
+- [ ] Choose the appropriate join type for different scenarios
 
 ## Prerequisites
-- Class 3: Python Basics
+- Lesson 06: Data Lifecycle
+- Understanding of relational data concepts
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+Real-world data is rarely in one table. Sensor readings need location info. Orders need customer details. Joins combine data from multiple sources to create complete pictures.
 
----
-
-# 📖 INSTRUCTOR-LED
-
-## 1. Classes and Objects
-
-```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
-
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
-
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
-```
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+## Recall from Lesson 6
+You designed data layers for sensor data. Now imagine you have a separate table with sensor locations. How do you combine them?
 
 ---
 
-## 2. Project Class: SensorReading
+# 📖 INSTRUCTOR-LED SECTION
 
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
+## 1. Types of Joins
 
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
-
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│   INNER JOIN       LEFT JOIN        RIGHT JOIN       FULL OUTER    │
+│                                                                     │
+│    ┌───┬───┐       ┌───┬───┐        ┌───┬───┐       ┌───┬───┐     │
+│    │ A │ B │       │ A │ B │        │ A │ B │       │ A │ B │     │
+│    │░░░│   │       │███│   │        │   │███│       │███│███│     │
+│    │░░░│░░░│       │███│░░░│        │░░░│███│       │███│███│     │
+│    │   │░░░│       │   │░░░│        │░░░│███│       │███│███│     │
+│    └───┴───┘       └───┴───┘        └───┴───┘       └───┴───┘     │
+│                                                                     │
+│   Only matching    All A +          All B +         All from       │
+│   rows             matching B       matching A      both tables    │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+Reference: [SQL Join Types Explained Visually](https://www.atlassian.com/data/sql/sql-join-types-explained-visually)
 
 ---
 
-## 3. Modules and Imports
+## 2. Sample Data
 
-```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
+**Sensors Table (df_sensors)**
 
-# File: utils/sensor.py
-class SensorReading:
-    ...
+| module_id | temperature | timestamp |
+|-----------|-------------|-----------|
+| sensor_01 | 25.3 | 2025-01-20 |
+| sensor_02 | 26.1 | 2025-01-20 |
+| sensor_03 | 24.8 | 2025-01-20 |
 
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
+**Locations Table (df_locations)**
 
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
-```
+| module_id | building | floor |
+|-----------|----------|-------|
+| sensor_01 | Building A | 1 |
+| sensor_02 | Building A | 2 |
+| sensor_04 | Building B | 1 |
 
-### Project Structure
-
-```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
-```
+Notice: `sensor_03` has no location, `sensor_04` has no readings.
 
 ---
 
-# ✏️ STUDENT PRACTICE
-
-## Exercise 1: Complete the Student Class
+## 3. Join Syntax in PySpark
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+from pyspark.sql import SparkSession
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+spark = SparkSession.builder.appName("Joins").getOrCreate()
+
+# Create sample DataFrames
+sensors = [("sensor_01", 25.3), ("sensor_02", 26.1), ("sensor_03", 24.8)]
+df_sensors = spark.createDataFrame(sensors, ["module_id", "temperature"])
+
+locations = [("sensor_01", "Building A", 1), ("sensor_02", "Building A", 2), ("sensor_04", "Building B", 1)]
+df_locations = spark.createDataFrame(locations, ["module_id", "building", "floor"])
+```
+
+### Inner Join (Default)
+
+```python
+df_inner = df_sensors.join(df_locations, "module_id", "inner")
+df_inner.show()
+```
+
+**Result:**
+| module_id | temperature | building | floor |
+|-----------|-------------|----------|-------|
+| sensor_01 | 25.3 | Building A | 1 |
+| sensor_02 | 26.1 | Building A | 2 |
+
+❌ `sensor_03` dropped (no location)
+❌ `sensor_04` dropped (no readings)
+
+### Left Join
+
+```python
+df_left = df_sensors.join(df_locations, "module_id", "left")
+df_left.show()
+```
+
+**Result:**
+| module_id | temperature | building | floor |
+|-----------|-------------|----------|-------|
+| sensor_01 | 25.3 | Building A | 1 |
+| sensor_02 | 26.1 | Building A | 2 |
+| sensor_03 | 24.8 | NULL | NULL |
+
+✅ All sensors kept
+❌ `sensor_04` dropped
+
+### Right Join
+
+```python
+df_right = df_sensors.join(df_locations, "module_id", "right")
+df_right.show()
+```
+
+**Result:**
+| module_id | temperature | building | floor |
+|-----------|-------------|----------|-------|
+| sensor_01 | 25.3 | Building A | 1 |
+| sensor_02 | 26.1 | Building A | 2 |
+| sensor_04 | NULL | Building B | 1 |
+
+❌ `sensor_03` dropped
+✅ All locations kept
+
+### Full Outer Join
+
+```python
+df_outer = df_sensors.join(df_locations, "module_id", "outer")
+df_outer.show()
+```
+
+**Result:**
+| module_id | temperature | building | floor |
+|-----------|-------------|----------|-------|
+| sensor_01 | 25.3 | Building A | 1 |
+| sensor_02 | 26.1 | Building A | 2 |
+| sensor_03 | 24.8 | NULL | NULL |
+| sensor_04 | NULL | Building B | 1 |
+
+✅ All sensors kept
+✅ All locations kept
+
+### ✅ Checkpoint 1
+What is the default join type in Spark? (Answer: inner)
+
+---
+
+## 4. Choosing the Right Join
+
+| Scenario | Join Type | Why |
+|----------|-----------|-----|
+| Only want complete records | Inner | Drops incomplete data |
+| Keep all from primary table | Left | Primary table is "left" |
+| Keep all from lookup table | Right | Lookup table is "right" |
+| Can't lose any data | Full Outer | Keeps everything |
+| All combinations | Cross | Cartesian product (careful!) |
+
+---
+
+## 5. Advanced: Self-Join
+
+Join a table to itself. Useful for hierarchical data.
+
+```python
+# Employees with manager info
+employees = [
+    (1, "Alice", None),    # CEO, no manager
+    (2, "Bob", 1),         # Reports to Alice
+    (3, "Carol", 1),       # Reports to Alice
+    (4, "Dave", 2),        # Reports to Bob
+]
+df_emp = spark.createDataFrame(employees, ["id", "name", "manager_id"])
+
+# Self-join to get manager names
+df_with_manager = df_emp.alias("e").join(
+    df_emp.alias("m"),
+    col("e.manager_id") == col("m.id"),
+    "left"
+).select(
+    col("e.name").alias("employee"),
+    col("m.name").alias("manager")
+)
+```
+
+**Result:**
+| employee | manager |
+|----------|---------|
+| Alice | NULL |
+| Bob | Alice |
+| Carol | Alice |
+| Dave | Bob |
+
+---
+
+# ✏️ STUDENT PRACTICE SECTION
+
+## Exercise 1: Basic Joins
+
+Given these tables:
+
+**Students**
+| student_id | name | class_of |
+|------------|------|----------|
+| 1 | John | 2024 |
+| 2 | Jane | 2025 |
+| 3 | Sarah | 2025 |
+| 4 | Oliver | 2026 |
+
+**Advisors**
+| advisor | class_of |
+|---------|----------|
+| Dr. Hill | 2024 |
+| Dr. Jung | 2025 |
+
+```python
+students = [(1, "John", 2024), (2, "Jane", 2025), (3, "Sarah", 2025), (4, "Oliver", 2026)]
+df_students = spark.createDataFrame(students, ["student_id", "name", "class_of"])
+
+advisors = [("Dr. Hill", 2024), ("Dr. Jung", 2025)]
+df_advisors = spark.createDataFrame(advisors, ["advisor", "class_of"])
+
+# YOUR TASKS:
+# 1. Inner join - how many rows?
+# 2. Left join - what happens to Oliver?
+# 3. Which join keeps all students?
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
+# 1. Inner join - 3 rows (John, Jane, Sarah)
+df_students.join(df_advisors, "class_of", "inner").show()
 
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
+# 2. Left join - Oliver has NULL advisor
+df_students.join(df_advisors, "class_of", "left").show()
+
+# 3. Left join keeps all students
 ```
 </details>
 
 ---
 
-## Exercise 2: Extend SensorReading
+## Exercise 2: Enrich Sensor Data
 
-Add a method to categorize temperature:
+Join sensor readings with location metadata:
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
+# Sensor readings
+readings = [
+    ("sensor_01", 25.3, "2025-01-20"),
+    ("sensor_02", 26.1, "2025-01-20"),
+    ("sensor_03", 24.8, "2025-01-20"),
+    ("sensor_01", 25.8, "2025-01-21"),
+]
+df_readings = spark.createDataFrame(readings, ["module_id", "temperature", "date"])
 
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
+# Location metadata
+locations = [
+    ("sensor_01", "Building A", "Room 101", 1),
+    ("sensor_02", "Building A", "Room 201", 2),
+]
+df_locations = spark.createDataFrame(locations, ["module_id", "building", "room", "floor"])
+
+# YOUR TASKS:
+# 1. Join readings with locations (keep all readings)
+# 2. Select: date, building, room, temperature
+# 3. Filter to only Building A
+# 4. How many readings have no location info?
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
+# 1. Left join to keep all readings
+df_enriched = df_readings.join(df_locations, "module_id", "left")
+
+# 2. Select columns
+df_result = df_enriched.select("date", "building", "room", "temperature")
+
+# 3. Filter to Building A
+df_building_a = df_result.filter(col("building") == "Building A")
+df_building_a.show()
+
+# 4. Count readings with no location
+no_location = df_enriched.filter(col("building").isNull()).count()
+print(f"Readings without location: {no_location}")  # Answer: 2
 ```
 </details>
 
 ---
 
-## Exercise 3: Create a Module
+## Exercise 3: Find Missing Data
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
-
-2. Create `main.py` that imports and uses them
-
-<details>
-<summary>💡 Solution</summary>
+Use joins to find sensors without readings and readings without sensors:
 
 ```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
+# Which sensors have no readings? (anti-join)
+df_no_readings = df_locations.join(df_readings, "module_id", "left_anti")
 
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
+# Which readings have no sensor info? (anti-join)
+df_no_sensor = df_readings.join(df_locations, "module_id", "left_anti")
 ```
+
+**Question:** What does `left_anti` join return?
+
+<details>
+<summary>💡 Answer</summary>
+
+`left_anti` returns rows from the left table that have NO match in the right table. It's useful for finding missing data.
 </details>
 
 ---
 
-# 📝 QUICK CHECK
+## Quick Check
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+1. What is the default join type in PySpark?
+   - a) Left
+   - b) Inner
+   - c) Outer
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+2. Which join keeps all rows from both tables?
+   - a) Inner
+   - b) Left
+   - c) Full Outer
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+3. What happens to unmatched rows in an inner join?
+   - a) Filled with NULL
+   - b) Dropped
+   - c) Duplicated
+
+4. When would you use a self-join?
+   - a) Joining two different tables
+   - b) Hierarchical data (employee-manager)
+   - c) Aggregating data
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+
+1. b) Inner
+2. c) Full Outer
+3. b) Dropped
+4. b) Hierarchical data
 </details>
 
 ---
 
-# 📋 SUMMARY
+## Common Errors
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Duplicate columns | Same column name in both tables | Use `alias()` or specify columns |
+| Cartesian product | Missing join condition | Always specify join key |
+| Unexpected row count | Wrong join type | Check with small sample first |
+| NULL values | Unmatched rows in outer join | Handle NULLs with `coalesce()` |
 
 ---
 
-# ⏭️ NEXT CLASS
+## Summary
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+| Join Type | Keeps From Left | Keeps From Right | Use Case |
+|-----------|-----------------|------------------|----------|
+| Inner | Only matched | Only matched | Complete records only |
+| Left | All | Only matched | Keep primary table |
+| Right | Only matched | All | Keep lookup table |
+| Full Outer | All | All | Can't lose any data |
+| Cross | All × All | All × All | All combinations |
+| Left Anti | Unmatched only | - | Find missing data |
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+---
+
+## What's Next?
+
+In **Lesson 8**, we'll learn about CI/CD (Continuous Integration/Continuous Deployment). You'll automate testing and deployment of your ETL code using GitHub Actions.
+
+**Preparation:** Create a GitHub account if you don't have one.
