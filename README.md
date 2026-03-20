@@ -1,301 +1,325 @@
-# Class 4: Python for Spark (OOP)
+# Class 8: Data Lifecycle
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 8 of 15 | 1 hour | Design data flow: raw → staged → analytics |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+By the end of this lesson, you will be able to:
+- [ ] Identify data sources and their characteristics
+- [ ] Design data layers (raw, staged, analytics)
+- [ ] Choose appropriate storage solutions
+- [ ] Consider backup and recovery strategies
 
 ## Prerequisites
-- Class 3: Python Basics
+- Lessons 03-05 completed
+- Understanding of ETL concepts
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+Without proper data architecture, pipelines become spaghetti code. Data layers separate concerns: raw data is preserved, staged data is cleaned, analytics data is business-ready. This makes debugging, auditing, and scaling much easier.
 
----
-
-# 📖 INSTRUCTOR-LED
-
-## 1. Classes and Objects
-
-```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
-
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
-
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
-```
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+## Recall from Lesson 4-5
+You wrote ETL code to read CSV, transform, and write Parquet. Now we'll design WHERE that data lives and HOW it flows through the system.
 
 ---
 
-## 2. Project Class: SensorReading
+# 📖 INSTRUCTOR-LED SECTION
 
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
+## 1. Thinking Corner: Data in Daily Life
 
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
+Data lifecycle exists everywhere. Think about a photo on your smartphone:
 
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
-```
+| Stage | Photo Example | Sensor Data Example |
+|-------|---------------|---------------------|
+| Created | Photo taken | Sensor records temperature |
+| Stored | Saved to phone | Saved to local buffer |
+| Transferred | Uploaded to cloud | Sent to central server |
+| Processed | Cropped, filtered | Cleaned, validated |
+| Archived | Moved to cold storage | Moved to data lake |
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+**Discussion:** What happens to data in these scenarios?
+- A student record in a university
+- Medication inventory in a hospital
+- Smoke concentration from IoT sensors
 
 ---
 
-## 3. Modules and Imports
+## 2. Source Systems
 
-```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
+### Where Does Data Come From?
 
-# File: utils/sensor.py
-class SensorReading:
-    ...
+| Source Type | Example | Characteristics |
+|-------------|---------|-----------------|
+| Relational DB | MySQL, PostgreSQL | Structured, ACID compliant |
+| APIs | REST, GraphQL | Real-time, rate-limited |
+| Files | CSV, Excel, JSON | Batch, manual uploads |
+| IoT/Streaming | MQTT, Kafka | High volume, continuous |
 
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
+![image-20250127-152857.png](05-data-lifecycle-images/image-20250127-152857.png)
+*(Fundamentals of Data Engineering, Reis & Housley)*
 
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
-```
+### Key Considerations
 
-### Project Structure
-
-```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
-```
+| Factor | Questions to Ask |
+|--------|------------------|
+| **Persistence** | Is data deleted quickly? Need CDC? |
+| **Volume** | How much data per day/hour/second? |
+| **Velocity** | Batch (daily) or streaming (real-time)? |
+| **Quality** | Are there errors, duplicates, nulls? |
+| **Schema** | Does schema change over time? |
 
 ---
 
-# ✏️ STUDENT PRACTICE
+## 3. Data Layer Architecture
 
-## Exercise 1: Complete the Student Class
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   SOURCE    │ ──▶ │     RAW     │ ──▶ │   STAGED    │ ──▶ │  ANALYTICS  │
+│   SYSTEMS   │     │  (Bronze)   │     │  (Silver)   │     │   (Gold)    │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                          │                   │                    │
+                    Exact copy          Cleaned &            Aggregated &
+                    from source         validated            business-ready
+```
+
+### Layer Definitions
+
+| Layer | Purpose | Format | Retention |
+|-------|---------|--------|-----------|
+| **Raw** | Preserve original data | As-is (CSV, JSON) | Long-term |
+| **Staged** | Clean, validate, standardize | Parquet | Medium-term |
+| **Analytics** | Business aggregations | Parquet | As needed |
+
+Reference: [AWS Data Layer Definitions](https://docs.aws.amazon.com/prescriptive-guidance/latest/defining-bucket-names-data-lakes/data-layer-definitions.html)
+
+### ✅ Checkpoint 1
+Draw the data flow for our sensor project:
+- Source: IoT sensors → MQTT → CSV files
+- Raw: Store CSV as-is
+- Staged: Clean + validate + Parquet
+- Analytics: Daily averages per sensor
+
+---
+
+## 4. Storage Solutions
+
+### Choosing the Right Storage
+
+| Use Case | Access Pattern | Recommended Storage |
+|----------|----------------|---------------------|
+| Hot data (frequent access) | Daily queries | S3 Standard, local SSD |
+| Warm data (occasional) | Weekly/monthly | S3 Standard-IA |
+| Cold data (archive) | Rarely accessed | S3 Glacier |
+
+### AWS S3 Storage Classes
+
+| Class | Use Case | Cost |
+|-------|----------|------|
+| S3 Standard | Frequently accessed | $$$ |
+| S3 Standard-IA | Infrequent access | $$ |
+| S3 Glacier | Archive (minutes to retrieve) | $ |
+| S3 Glacier Deep Archive | Long-term archive (hours) | ¢ |
+
+Reference: [AWS S3 Storage Classes](https://aws.amazon.com/s3/storage-classes/)
+
+---
+
+## 5. Backup and Recovery
+
+### Key Metrics
+
+| Metric | Definition | Example |
+|--------|------------|---------|
+| **RPO** (Recovery Point Objective) | Max acceptable data loss | 1 hour = lose up to 1 hour of data |
+| **RTO** (Recovery Time Objective) | Max acceptable downtime | 4 hours = system back in 4 hours |
+
+### Backup Strategy Questions
+
+1. How many copies? (Rule of 3-2-1: 3 copies, 2 media types, 1 offsite)
+2. How often? (Depends on RPO)
+3. How to recover? (Automated vs manual)
+4. How long to recover? (Depends on RTO)
+
+---
+
+# ✏️ STUDENT PRACTICE SECTION
+
+## Exercise 1: Design Data Layers
+
+For our sensor data project, define what happens at each layer:
+
+| Layer | Input | Transformations | Output |
+|-------|-------|-----------------|--------|
+| Raw | CSV from sensors | ??? | ??? |
+| Staged | Raw Parquet | ??? | ??? |
+| Analytics | Staged Parquet | ??? | ??? |
+
+<details>
+<summary>💡 Solution</summary>
+
+| Layer | Input | Transformations | Output |
+|-------|-------|-----------------|--------|
+| Raw | CSV from sensors | None (preserve as-is) | Parquet (raw/) |
+| Staged | Raw Parquet | Filter nulls, validate ranges, add timestamps | Parquet (staged/) |
+| Analytics | Staged Parquet | Aggregate by day/sensor, calculate stats | Parquet (analytics/) |
+</details>
+
+---
+
+## Exercise 2: Implement Raw to Staged
+
+Write a PySpark job that moves data from raw to staged:
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, current_timestamp
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+spark = SparkSession.builder.appName("RawToStaged").getOrCreate()
+
+# Read raw data
+df_raw = spark.read.parquet("raw/sensors/")
+
+# YOUR TASKS:
+# 1. Filter out rows where temperature is NULL
+# 2. Filter out rows where temperature > 100 or < -50
+# 3. Filter out rows where humidity > 100 or < 0
+# 4. Add a column 'processed_at' with current timestamp
+# 5. Write to staged/sensors/ as Parquet
+
+df_staged = df_raw  # Transform this!
+
+df_staged.write.mode("overwrite").parquet("staged/sensors/")
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
+df_staged = df_raw \
+    .filter(col("temperature").isNotNull()) \
+    .filter((col("temperature") >= -50) & (col("temperature") <= 100)) \
+    .filter((col("humidity") >= 0) & (col("humidity") <= 100)) \
+    .withColumn("processed_at", current_timestamp())
 
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
+df_staged.write.mode("overwrite").parquet("staged/sensors/")
 ```
 </details>
 
 ---
 
-## Exercise 2: Extend SensorReading
+## Exercise 3: Implement Staged to Analytics
 
-Add a method to categorize temperature:
+Write a PySpark job that creates daily aggregations:
 
 ```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
+from pyspark.sql.functions import avg, max, min, count, to_date
 
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
+df_staged = spark.read.parquet("staged/sensors/")
+
+# YOUR TASKS:
+# 1. Extract date from timestamp column
+# 2. Group by module_id and date
+# 3. Calculate: avg_temp, max_temp, min_temp, reading_count
+# 4. Write to analytics/daily_summary/
+
+# Expected output columns:
+# module_id, date, avg_temp, max_temp, min_temp, reading_count
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
+df_analytics = df_staged \
+    .withColumn("date", to_date(col("timestamp"))) \
+    .groupBy("module_id", "date") \
+    .agg(
+        avg("temperature").alias("avg_temp"),
+        max("temperature").alias("max_temp"),
+        min("temperature").alias("min_temp"),
+        count("*").alias("reading_count")
+    )
+
+df_analytics.write.mode("overwrite").parquet("analytics/daily_summary/")
 ```
 </details>
 
 ---
 
-## Exercise 3: Create a Module
+## Exercise 4: Storage Decision
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
+Choose the appropriate S3 storage class for each scenario:
 
-2. Create `main.py` that imports and uses them
+| Scenario | Storage Class | Why? |
+|----------|---------------|------|
+| Real-time sensor data (queried hourly) | ??? | ??? |
+| Monthly compliance reports | ??? | ??? |
+| 10-year-old audit logs (legal requirement) | ??? | ??? |
 
 <details>
 <summary>💡 Solution</summary>
 
-```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
-```
+| Scenario | Storage Class | Why? |
+|----------|---------------|------|
+| Real-time sensor data | S3 Standard | Frequent access, low latency needed |
+| Monthly compliance reports | S3 Standard-IA | Infrequent but needs quick access |
+| 10-year-old audit logs | S3 Glacier Deep Archive | Rarely accessed, cost optimization |
 </details>
 
 ---
 
-# 📝 QUICK CHECK
+## Quick Check
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+1. What is the purpose of the "Raw" data layer?
+   - a) Store cleaned data
+   - b) Preserve original data as-is
+   - c) Store aggregated metrics
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+2. What does RPO stand for?
+   - a) Recovery Point Objective
+   - b) Recovery Process Order
+   - c) Raw Processing Output
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+3. Which layer should contain business-ready aggregations?
+   - a) Raw
+   - b) Staged
+   - c) Analytics
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+
+1. b) Preserve original data as-is
+2. a) Recovery Point Objective
+3. c) Analytics
 </details>
 
 ---
 
-# 📋 SUMMARY
+## Common Errors
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Data loss in raw layer | Transforming before saving raw | Always save raw first |
+| Schema mismatch | Source schema changed | Use schema evolution or versioning |
+| Storage costs exploding | Wrong storage class | Review access patterns, use lifecycle policies |
 
 ---
 
-# ⏭️ NEXT CLASS
+## Summary
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+| Concept | Key Point |
+|---------|-----------|
+| Data Layers | Raw → Staged → Analytics |
+| Raw | Preserve original, no transformations |
+| Staged | Cleaned, validated, standardized |
+| Analytics | Aggregated, business-ready |
+| Storage | Match storage class to access pattern |
+| Backup | Define RPO and RTO |
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+---
+
+## What's Next?
+
+In **Lesson 7**, we'll learn about Joining Data. You'll combine sensor readings with location metadata to enrich your analytics.
+
+**Preparation:** Think about what additional data would make sensor readings more useful (location, sensor type, calibration date, etc.)
