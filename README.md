@@ -1,301 +1,355 @@
-# Class 4: Python for Spark (OOP)
+# Class 10: CI/CD for Data Pipelines
 
 | Class | Duration | Project Milestone |
 |-------|----------|-------------------|
-| 4 of 15 | 1 hour | Create SensorReading class for project |
+| 10 of 15 | 1 hour | Set up GitHub Actions for automated testing |
 
 ## Learning Objectives
-- [ ] Create classes with attributes and methods
-- [ ] Import and use modules
-- [ ] Organize code across files
+By the end of this lesson, you will be able to:
+- [ ] Explain CI/CD concepts and benefits
+- [ ] Set up GitHub Actions for automated testing
+- [ ] Structure a Python/PySpark project for CI/CD
 
 ## Prerequisites
-- Class 3: Python Basics
+- Lessons 03-07 completed
+- GitHub account
+- Git installed locally
 
-## Recall from Class 3
-You wrote functions like `score_to_grade()`. Now we'll organize related functions into classes.
+## Why This Matters
+Manual deployments are error-prone. "It works on my machine" is not a deployment strategy. CI/CD automates testing and deployment, catching bugs early and ensuring consistent releases.
 
----
-
-# 📖 INSTRUCTOR-LED
-
-## 1. Classes and Objects
-
-```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        """Constructor - called when creating instance"""
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        """Add a score for a subject"""
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        """Calculate average score"""
-        if not self.scores:
-            return 0.0
-        return sum(self.scores.values()) / len(self.scores)
-
-# Create instances
-alice = Student("Alice", 1001)
-alice.add_score("Math", 90)
-alice.add_score("English", 85)
-print(alice.get_average())  # 87.5
-
-bob = Student("Bob", 1002)
-bob.add_score("Math", 75)
-print(bob.get_average())  # 75.0
-```
-
-### Key Concepts
-
-| Term | Meaning |
-|------|---------|
-| `class` | Blueprint for objects |
-| `self` | Reference to current instance |
-| `__init__` | Constructor method |
-| Instance | Object created from class |
+## Recall from Lesson 5
+You wrote unit tests for your ETL functions. Now we'll run those tests automatically every time you push code.
 
 ---
 
-## 2. Project Class: SensorReading
+# 📖 INSTRUCTOR-LED SECTION
 
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-    
-    def is_valid(self) -> bool:
-        """Check if reading is within valid ranges"""
-        temp_valid = -50 <= self.temperature <= 100
-        humid_valid = 0 <= self.humidity <= 100
-        return temp_valid and humid_valid
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary (useful for Spark)"""
-        return {
-            "module_id": self.module_id,
-            "temperature": self.temperature,
-            "humidity": self.humidity
-        }
+## 1. What is CI/CD?
 
-# Test
-reading = SensorReading("sensor_01", 25.5, 60.0)
-print(reading.is_valid())   # True
-print(reading.to_dict())    # {'module_id': 'sensor_01', ...}
+| Term | Meaning | Example |
+|------|---------|---------|
+| **CI** | Continuous Integration | Auto-run tests on every push |
+| **CD** | Continuous Delivery | Auto-deploy to staging/production |
 
-bad_reading = SensorReading("sensor_02", 150.0, 50.0)
-print(bad_reading.is_valid())  # False
+### The CI/CD Pipeline
+
+```
+┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
+│  Code   │ ──▶ │  Test   │ ──▶ │  Build  │ ──▶ │ Deploy  │
+│  Push   │     │  (CI)   │     │  (CI)   │     │  (CD)   │
+└─────────┘     └─────────┘     └─────────┘     └─────────┘
+                    │
+              ❌ Fail = Stop
+              ✅ Pass = Continue
 ```
 
-### ✅ Checkpoint
-What would `SensorReading("s1", -60, 50).is_valid()` return?
+Reference: [https://en.wikipedia.org/wiki/CI/CD](https://en.wikipedia.org/wiki/CI/CD)
 
 ---
 
-## 3. Modules and Imports
+## 2. Why CI/CD for Data Engineering?
 
-```python
-# File: utils/grading.py
-def score_to_grade(score: int) -> str:
-    if score >= 80: return "A"
-    elif score >= 70: return "B"
-    else: return "F"
+| Without CI/CD | With CI/CD |
+|---------------|------------|
+| "I think it works" | Tests prove it works |
+| Manual deployment | Automated deployment |
+| "Works on my machine" | Works everywhere |
+| Fear of changes | Confidence to refactor |
+| Bugs in production | Bugs caught early |
 
-# File: utils/sensor.py
-class SensorReading:
-    ...
+### Data Pipelines Fit CI/CD Because:
 
-# File: main.py
-from utils.grading import score_to_grade
-from utils.sensor import SensorReading
+- ETL scripts are modular (independent functions)
+- Functions can be unit tested
+- Scripts can be added/removed without affecting others
 
-grade = score_to_grade(85)
-reading = SensorReading("s1", 25.0, 60.0)
-```
+---
 
-### Project Structure
+## 3. Project Structure
 
 ```
-my_project/
-├── utils/
-│   ├── __init__.py    # Makes it a package
-│   ├── grading.py
-│   └── sensor.py
-└── main.py
+my-etl-project/
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # GitHub Actions config
+├── src/
+│   └── etl/
+│       ├── __init__.py
+│       ├── transformations.py
+│       └── validations.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_transformations.py
+│   └── test_validations.py
+├── pyproject.toml          # Package config
+├── requirements.txt        # Dependencies
+└── .gitignore
 ```
 
 ---
 
-# ✏️ STUDENT PRACTICE
+## 4. GitHub Actions Workflow
 
-## Exercise 1: Complete the Student Class
+Create `.github/workflows/ci.yml`:
+
+```yaml
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest
+    
+    - name: Run tests
+      run: pytest tests/ -v
+```
+
+### Workflow Triggers
+
+| Trigger | When |
+|---------|------|
+| `push` | Code pushed to branch |
+| `pull_request` | PR opened/updated |
+| `schedule` | Cron schedule |
+| `workflow_dispatch` | Manual trigger |
+
+### ✅ Checkpoint 1
+Create a new GitHub repository and add the workflow file above.
+
+---
+
+## 5. Example: Complete CI Setup
+
+**requirements.txt:**
+```
+pyspark==3.5.0
+chispa==0.9.4
+pytest==8.0.0
+```
+
+**src/etl/transformations.py:**
+```python
+from pyspark.sql.functions import col, when
+
+def add_temperature_status(df):
+    """Add status column based on temperature."""
+    return df.withColumn("status",
+        when(col("temperature") > 30, "HOT")
+        .when(col("temperature") < 10, "COLD")
+        .otherwise("NORMAL")
+    )
+
+def filter_valid_readings(df):
+    """Remove invalid temperature readings."""
+    return df.filter(
+        (col("temperature") >= -50) & 
+        (col("temperature") <= 100)
+    )
+```
+
+**tests/test_transformations.py:**
+```python
+import pytest
+from pyspark.sql import SparkSession
+from chispa.dataframe_comparer import assert_df_equality
+from src.etl.transformations import add_temperature_status, filter_valid_readings
+
+@pytest.fixture(scope="session")
+def spark():
+    return SparkSession.builder.master("local[*]").getOrCreate()
+
+def test_add_temperature_status(spark):
+    input_data = [(35.0,), (25.0,), (5.0,)]
+    input_df = spark.createDataFrame(input_data, ["temperature"])
+    
+    expected_data = [(35.0, "HOT"), (25.0, "NORMAL"), (5.0, "COLD")]
+    expected_df = spark.createDataFrame(expected_data, ["temperature", "status"])
+    
+    result_df = add_temperature_status(input_df)
+    assert_df_equality(result_df, expected_df)
+
+def test_filter_valid_readings(spark):
+    input_data = [(25.0,), (150.0,), (-100.0,)]
+    input_df = spark.createDataFrame(input_data, ["temperature"])
+    
+    expected_data = [(25.0,)]
+    expected_df = spark.createDataFrame(expected_data, ["temperature"])
+    
+    result_df = filter_valid_readings(input_df)
+    assert_df_equality(result_df, expected_df)
+```
+
+---
+
+## 6. CI/CD Workflow in Practice
+
+```
+Developer                    GitHub                      Production
+    │                           │                            │
+    │  1. Write code + tests    │                            │
+    │ ─────────────────────────▶│                            │
+    │                           │  2. CI runs tests          │
+    │                           │ ◀────────────────          │
+    │  3. See results           │                            │
+    │ ◀─────────────────────────│                            │
+    │                           │                            │
+    │  4. Merge to main         │                            │
+    │ ─────────────────────────▶│                            │
+    │                           │  5. CD deploys             │
+    │                           │ ──────────────────────────▶│
+```
+
+---
+
+# ✏️ STUDENT PRACTICE SECTION
+
+## Exercise 1: Create CI Workflow
+
+1. Create a new GitHub repository
+2. Add the project structure shown above
+3. Create the CI workflow file
+4. Push and verify the workflow runs
+
+**Verification:** Go to Actions tab in GitHub and see the workflow run.
+
+---
+
+## Exercise 2: Add a New Test
+
+Add a test for a new function `celsius_to_fahrenheit`:
 
 ```python
-class Student:
-    def __init__(self, name: str, student_id: int):
-        self.name = name
-        self.student_id = student_id
-        self.scores = {}
-    
-    def add_score(self, subject: str, score: int):
-        self.scores[subject] = score
-    
-    def get_average(self) -> float:
-        # YOUR CODE HERE
-        pass
-    
-    def get_grade(self) -> str:
-        """Return grade based on average: A(80+), B(70+), C(60+), F"""
-        # YOUR CODE HERE
-        pass
+# src/etl/transformations.py
+def celsius_to_fahrenheit(df):
+    """Convert temperature from Celsius to Fahrenheit."""
+    return df.withColumn("temp_f", col("temperature") * 9/5 + 32)
 
-# Test
-s = Student("Test", 1)
-s.add_score("Math", 85)
-s.add_score("English", 75)
-print(s.get_average())  # Expected: 80.0
-print(s.get_grade())    # Expected: A
+# tests/test_transformations.py
+def test_celsius_to_fahrenheit(spark):
+    # YOUR CODE HERE
+    # Input: [(0,), (100,)]
+    # Expected: [(0, 32.0), (100, 212.0)]
+    pass
 ```
 
 <details>
 <summary>💡 Solution</summary>
 
 ```python
-def get_average(self) -> float:
-    if not self.scores:
-        return 0.0
-    return sum(self.scores.values()) / len(self.scores)
-
-def get_grade(self) -> str:
-    avg = self.get_average()
-    if avg >= 80: return "A"
-    elif avg >= 70: return "B"
-    elif avg >= 60: return "C"
-    else: return "F"
-```
-</details>
-
----
-
-## Exercise 2: Extend SensorReading
-
-Add a method to categorize temperature:
-
-```python
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
+def test_celsius_to_fahrenheit(spark):
+    input_data = [(0.0,), (100.0,)]
+    input_df = spark.createDataFrame(input_data, ["temperature"])
     
-    def get_temp_status(self) -> str:
-        """Return: 'COLD' (<15), 'NORMAL' (15-30), 'HOT' (>30)"""
-        # YOUR CODE HERE
-        pass
-
-# Test
-print(SensorReading("s1", 10, 50).get_temp_status())   # COLD
-print(SensorReading("s2", 25, 50).get_temp_status())   # NORMAL
-print(SensorReading("s3", 35, 50).get_temp_status())   # HOT
-```
-
-<details>
-<summary>💡 Solution</summary>
-
-```python
-def get_temp_status(self) -> str:
-    if self.temperature < 15:
-        return "COLD"
-    elif self.temperature <= 30:
-        return "NORMAL"
-    else:
-        return "HOT"
+    expected_data = [(0.0, 32.0), (100.0, 212.0)]
+    expected_df = spark.createDataFrame(expected_data, ["temperature", "temp_f"])
+    
+    result_df = celsius_to_fahrenheit(input_df)
+    assert_df_equality(result_df, expected_df)
 ```
 </details>
 
 ---
 
-## Exercise 3: Create a Module
+## Exercise 3: Break the Build
 
-1. Create file `sensor_utils.py` with:
-   - `SensorReading` class
-   - Function `validate_reading(reading) -> bool`
+1. Intentionally write a failing test
+2. Push to GitHub
+3. Observe the CI failure
+4. Fix the test
+5. Push again and see it pass
 
-2. Create `main.py` that imports and uses them
-
-<details>
-<summary>💡 Solution</summary>
-
-```python
-# sensor_utils.py
-class SensorReading:
-    def __init__(self, module_id: str, temperature: float, humidity: float):
-        self.module_id = module_id
-        self.temperature = temperature
-        self.humidity = humidity
-
-def validate_reading(reading: SensorReading) -> bool:
-    return -50 <= reading.temperature <= 100
-
-# main.py
-from sensor_utils import SensorReading, validate_reading
-
-r = SensorReading("s1", 25.0, 60.0)
-print(validate_reading(r))  # True
-```
-</details>
+This demonstrates the "safety net" of CI.
 
 ---
 
-# 📝 QUICK CHECK
+## Discussion: Is CI/CD Worth It?
 
-1. What is `self` in a class method?
-   - a) The class name
-   - b) Reference to current instance
-   - c) A reserved variable
+![image-20250206-170815.png](07-ci-cd-images/image-20250206-170815.png)
 
-2. What file makes a folder a Python package?
-   - a) `main.py`
-   - b) `__init__()`
-   - c) `__init__.py`
+### Time Investment Analysis
 
-3. How do you import a class from a module?
-   - a) `import MyClass from module`
-   - b) `from module import MyClass`
-   - c) `include module.MyClass`
+| Task | Time per occurrence | Frequency | 5-year total |
+|------|---------------------|-----------|--------------|
+| Manual SSH deploy | 5 min | 3x/week | 65 hours |
+| Manual testing | 15 min | 5x/week | 325 hours |
+| CI/CD setup | 4 hours | Once | 4 hours |
+
+**Conclusion:** CI/CD pays off quickly for any project that lives more than a few weeks.
+
+---
+
+## Quick Check
+
+1. What does CI stand for?
+   - a) Code Integration
+   - b) Continuous Integration
+   - c) Complete Installation
+
+2. When does a GitHub Actions workflow run with `on: push`?
+   - a) Only on manual trigger
+   - b) Every time code is pushed
+   - c) Only on pull requests
+
+3. What happens if a test fails in CI?
+   - a) Deployment continues anyway
+   - b) Pipeline stops, code not merged
+   - c) Test is skipped
 
 <details>
 <summary>Answers</summary>
-1. b) Reference to current instance
-2. c) `__init__.py`
-3. b) `from module import MyClass`
+
+1. b) Continuous Integration
+2. b) Every time code is pushed
+3. b) Pipeline stops, code not merged
 </details>
 
 ---
 
-# 📋 SUMMARY
+## Common Errors
 
-| Concept | Example |
-|---------|---------|
-| Class | `class Student:` |
-| Constructor | `def __init__(self, name):` |
-| Method | `def get_average(self):` |
-| Instance | `alice = Student("Alice")` |
-| Import | `from module import Class` |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Workflow not running | Wrong file path | Must be `.github/workflows/*.yml` |
+| Python not found | Missing setup step | Add `actions/setup-python` |
+| Module not found | Dependencies not installed | Add `pip install -r requirements.txt` |
+| Tests pass locally, fail in CI | Environment differences | Use same Python version |
 
 ---
 
-# ⏭️ NEXT CLASS
+## Summary
 
-**Class 5: Spark ETL - Reading Data**
-- Create SparkSession
-- Read CSV files
-- Understand DataFrames
+| Concept | Key Point |
+|---------|-----------|
+| CI | Automatically test on every push |
+| CD | Automatically deploy after tests pass |
+| GitHub Actions | Free CI/CD for GitHub repos |
+| Workflow | YAML file defining CI/CD steps |
+| Benefits | Catch bugs early, consistent deployments |
 
-**Preparation:** Ensure PySpark is installed: `pip install pyspark`
+---
+
+## What's Next?
+
+In **Lesson 9**, we'll learn about Orchestration with Apache Airflow. You'll schedule your ETL jobs to run automatically and manage dependencies between tasks.
+
+**Preparation:** Install Docker (Airflow runs in containers)
